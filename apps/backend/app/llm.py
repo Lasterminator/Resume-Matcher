@@ -227,19 +227,43 @@ def _load_stored_config() -> dict:
     return {}
 
 
+def _normalize_ollama_config(config: LLMConfig) -> LLMConfig:
+    """If api_base points to Ollama (port 11434) but provider is not ollama, return config with ollama provider/model."""
+    if not config.api_base:
+        return config
+    base_str = str(config.api_base).strip().rstrip("/")
+    if ":11434" not in base_str or config.provider == "ollama":
+        return config
+    model = config.model
+    if ":" not in model or not model.replace(":", "").replace("-", "").replace("_", "").isalnum():
+        model = "gemma3:4b"
+    return LLMConfig(
+        provider="ollama",
+        model=model,
+        api_key=config.api_key,
+        api_base=config.api_base,
+    )
+
+
 def get_llm_config() -> LLMConfig:
     """Get current LLM configuration.
 
-    Priority: config.json file > environment variables/settings
+    Priority: config.json file > environment variables/settings.
+    When api_base points to Ollama (port 11434), provider/model are forced to Ollama
+    so LiteLLM uses the correct API path instead of Gemini/Anthropic endpoints.
     """
     stored = _load_stored_config()
+    provider = stored.get("provider", settings.llm_provider)
+    model = stored.get("model", settings.llm_model)
+    api_base = stored.get("api_base", settings.llm_api_base)
 
-    return LLMConfig(
-        provider=stored.get("provider", settings.llm_provider),
-        model=stored.get("model", settings.llm_model),
+    raw = LLMConfig(
+        provider=provider,
+        model=model,
         api_key=stored.get("api_key", settings.llm_api_key),
-        api_base=stored.get("api_base", settings.llm_api_base),
+        api_base=api_base,
     )
+    return _normalize_ollama_config(raw)
 
 
 def get_model_name(config: LLMConfig) -> str:
@@ -311,6 +335,8 @@ async def check_llm_health(
     """Check if the LLM provider is accessible and working."""
     if config is None:
         config = get_llm_config()
+    else:
+        config = _normalize_ollama_config(config)
 
     # Check if API key is configured (except for Ollama)
     if config.provider != "ollama" and not config.api_key:
@@ -524,7 +550,7 @@ def _calculate_timeout(
         "openai": 1.0,
         "anthropic": 1.2,
         "openrouter": 1.5,  # More variable latency
-        "ollama": 2.0,  # Local models can be slower
+        "ollama": 3.0,  # Local models are slower; use 3x for JSON (e.g. resume parsing)
     }
     provider_factor = provider_factors.get(provider, 1.0)
 

@@ -313,6 +313,7 @@ def normalize_resume_data(data: dict[str, Any]) -> dict[str, Any]:
 
     This function is used for lazy migration of existing resumes
     that don't have sectionMeta or customSections fields.
+    Also strips None values from customSections (LLMs sometimes return null).
     """
     if not data.get("sectionMeta"):
         # Use deepcopy to avoid shared mutable reference bug
@@ -320,6 +321,13 @@ def normalize_resume_data(data: dict[str, Any]) -> dict[str, Any]:
         data["sectionMeta"] = copy.deepcopy(DEFAULT_SECTION_META)
     if "customSections" not in data:
         data["customSections"] = {}
+    elif isinstance(data["customSections"], dict):
+        # LLMs (e.g. Ollama) may return customSections with null values; Pydantic rejects None
+        data["customSections"] = {
+            k: v
+            for k, v in data["customSections"].items()
+            if v is not None and isinstance(v, dict)
+        }
     return data
 
 

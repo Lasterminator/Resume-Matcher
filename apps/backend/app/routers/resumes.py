@@ -361,7 +361,12 @@ async def upload_resume(file: UploadFile = File(...)) -> ResumeUploadResponse:
         resume["processing_status"] = "ready"
     except Exception as e:
         # LLM parsing failed, update status to failed
-        logger.warning(f"Resume parsing to JSON failed for {file.filename}: {e}")
+        logger.exception(
+            "Resume parsing to JSON failed for %s: %s",
+            file.filename,
+            e,
+            exc_info=True,
+        )
         db.update_resume(resume["resume_id"], {"processing_status": "failed"})
         resume["processing_status"] = "failed"
 
